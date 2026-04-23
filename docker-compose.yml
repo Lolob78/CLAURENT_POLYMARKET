@@ -1,0 +1,14 @@
+YAMLversion: '3.9'
+
+services:
+  CLAUaurent-paper:
+    build: .
+    container_name: CLAUaurent-paper
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./CLAUaurent.log:/app/CLAUaurent.log
+    ports:
+      - "8501:8501"
+    command: python scripts/run_24_7_paper_bot.py

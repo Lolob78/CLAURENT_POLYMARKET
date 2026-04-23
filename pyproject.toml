@@ -1,0 +1,55 @@
+tool.poetry]
+name = "CLAUaurent-polymarket-agent"
+version = "1.0.0"
+description = "CLAUAURENT Polymarket Multi-LLM Paper Trading Agent"
+authors = ["Laurent + CLAU"]
+python = "^3.11"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+py-clob-client-v2 = "^1.0.0"
+requests = "^2.32"
+pandas = "^2.2"
+numpy = "^2.1"
+pydantic = "^2.10"
+pydantic-settings = "^2.7"
+python-dotenv = "^1.0"
+rich = "^13.9"
+structlog = "^25.1"
+langgraph = "^0.2"
+litellm = "^1.60"
+playwright = "^1.51"
+chromadb = "^0.6"
+streamlit = "^1.42"
+aiohttp = "^3.11"
+websockets = "^14.0"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.0"
+black = "^24.10"
+ruff = "^0.9"
+pytest = "^8.3"
+
+[tool.poetry.scripts]
+CLAUaurent = "scripts.run_24_7_paper_bot:main"
+
+@.env.example
+env# LLM Providers
+CLAU_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+
+# Dune MCP
+DUNE_MCP_URL=https://mcp.dune.com
+DUNE_API_KEY=...
+
+# Logging
+LOG_LEVEL=INFO
+RAG_PERSIST_DIR=./data/rag_db
+
+# Paper mode (verrouillé)
+PAPER_MODE=true
+EDGE_MIN=0.10
+RISK_PER_TRADE=0.005
+MAX_OPEN_POSITIONS=3
+MAX_DRAWDOWN=0.15

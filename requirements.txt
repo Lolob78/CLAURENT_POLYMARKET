@@ -1,0 +1,37 @@
+# CLAURENT_POLYMARKET - Python Dependencies
+# Installation: pip install -r requirements.txt
+
+# Core
+py-clob-client==0.34.6
+requests==2.32
+pandas==2.2
+numpy==1.26.4
+pydantic==2.10
+pydantic-settings==2.7
+python-dotenv==1.0
+
+# Logging & UI
+rich==13.9
+structlog==25.1
+
+# AI & Agents
+langgraph==0.2
+# litellm==1.83.10
+
+# Browser automation
+playwright==1.51
+
+# Vector DB (RAG)
+chromadb==0.6
+
+# Dashboard
+streamlit==1.42
+
+# Async
+aiohttp==3.11
+websockets==14.0
+
+# Dev dependencies (optional, for tests)
+pytest==8.3
+black==24.10
+ruff==0.9
