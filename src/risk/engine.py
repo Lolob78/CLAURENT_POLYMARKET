@@ -1,6 +1,5 @@
 from src.config import settings
 from datetime import datetime
-import pandas as pd
 
 class RiskEngine:
     def __init__(self, initial_capital: float = 3000.0):

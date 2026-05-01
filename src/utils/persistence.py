@@ -1,9 +1,15 @@
 """Persistence des trades et state en JSON/CSV."""
+import csv
 import json
 from pathlib import Path
 from datetime import datetime
-import pandas as pd
 from typing import List, Dict, Any
+
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 
 
 class TradesPersistence:
@@ -65,9 +71,14 @@ class TradesPersistence:
     def export_to_csv(self, trades: List[Dict[str, Any]], filename: str = "trades.csv"):
         """Exporte les trades en CSV pour analyse."""
         try:
-            df = pd.DataFrame(trades)
             csv_path = self.data_dir / filename
-            df.to_csv(csv_path, index=False)
+            if HAS_PANDAS:
+                pd.DataFrame(trades).to_csv(csv_path, index=False)
+            elif trades:
+                with open(csv_path, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=trades[0].keys())
+                    writer.writeheader()
+                    writer.writerows(trades)
             print(f"✅ Trades exportés en {csv_path}")
             return csv_path
         except Exception as e:

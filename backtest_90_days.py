@@ -1,8 +1,15 @@
 """Backtest 90 jours avec persistence et gestion d'erreurs robuste."""
 import asyncio
-import pandas as pd
+import csv
+import json
 from datetime import datetime, timedelta
 from rich.console import Console
+
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 
 from src.config import settings
 from src.config_validation import validate_config
@@ -47,8 +54,8 @@ async def run_backtest_90_days(num_markets: int = 500):
             console.log(f"[cyan]Processing {i+1}/{len(test_markets)} : {market['question'][:70]}...[/cyan]")
 
             # Simulation du contexte historique (on utilise les données actuelles comme proxy pour le backtest initial)
-            news = scrape_news_market(market["question"])
-            onchain = query_dune_mcp(market.get("condition_id", ""))
+            news = await scrape_news_market(market["question"])
+            onchain = await asyncio.to_thread(query_dune_mcp, market.get("condition_id", ""))
 
             initial_state = {
                 "market": market,
@@ -106,8 +113,15 @@ async def run_backtest_90_days(num_markets: int = 500):
                 duration_seconds=round(duration, 1))
 
     # Export CSV détaillé
-    trades_df = pd.DataFrame(risk.trades)
-    trades_df.to_csv("data/backtest_90j_results.csv", index=False)
+    csv_path = "data/backtest_90j_results.csv"
+    if HAS_PANDAS:
+        import pandas as pd
+        pd.DataFrame(risk.trades).to_csv(csv_path, index=False)
+    elif risk.trades:
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=risk.trades[0].keys())
+            writer.writeheader()
+            writer.writerows(risk.trades)
 
     console.log(f"[bold]Capital final :[/bold] ${risk.capital:.2f} ({return_pct:+.2f}%)")
     console.log(f"[bold]Trades exécutés :[/bold] {total_trades}")

@@ -1,4 +1,4 @@
-tool.poetry]
+[tool.poetry]
 name = "CLAUaurent-polymarket-agent"
 version = "1.0.0"
 description = "CLAUAURENT Polymarket Multi-LLM Paper Trading Agent"
@@ -32,24 +32,3 @@ pytest = "^8.3"
 
 [tool.poetry.scripts]
 CLAUaurent = "scripts.run_24_7_paper_bot:main"
-
-@.env.example
-env# LLM Providers
-CLAU_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-
-# Dune MCP
-DUNE_MCP_URL=https://mcp.dune.com
-DUNE_API_KEY=...
-
-# Logging
-LOG_LEVEL=INFO
-RAG_PERSIST_DIR=./data/rag_db
-
-# Paper mode (verrouillé)
-PAPER_MODE=true
-EDGE_MIN=0.10
-RISK_PER_TRADE=0.005
-MAX_OPEN_POSITIONS=3
-MAX_DRAWDOWN=0.15
