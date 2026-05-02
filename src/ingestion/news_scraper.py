@@ -1,5 +1,9 @@
 """Scraping news avec Playwright async."""
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+    HAS_PLAYWRIGHT = True
+except ImportError:
+    HAS_PLAYWRIGHT = False
 from src.utils.logger import get_logger
 
 logger = get_logger("news_scraper")
@@ -7,6 +11,8 @@ logger = get_logger("news_scraper")
 
 async def scrape_news_market(question: str, max_results: int = 8):
     """Scraping X/news avec Playwright async (sans warning)."""
+    if not HAS_PLAYWRIGHT:
+        return "No recent news available (playwright not installed)."
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
