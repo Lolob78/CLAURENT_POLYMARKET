@@ -27,7 +27,7 @@ async def analyze_single_market(market: dict):
         market["price"] = price
 
         # Ingestion parallèle
-        news_task = asyncio.create_task(asyncio.to_thread(scrape_news_market, market["question"]))
+        news_task = asyncio.create_task(scrape_news_market(market["question"]))
         onchain_task = asyncio.create_task(asyncio.to_thread(query_dune_mcp, market.get("condition_id", "")))
 
         news = await news_task
