@@ -3,9 +3,7 @@ from src.risk.engine import risk
 from src.config import settings
 from src.clients.clob import get_live_price
 from src.utils.logger import get_logger
-from rich.console import Console
 
-console = Console()
 logger = get_logger("paper_executor")
 
 
@@ -30,10 +28,10 @@ async def paper_execute(market: dict, result):
             price=price,
             market=market.get("question", "")[:60],
         )
-        console.log(f"[bold green]PAPER TRADE OPEN[/] {result.side} | Edge {result.edge:+.1%} | {result.rationale[:100]}...")
+        print(f"PAPER TRADE OPEN | {result.side} | Edge {result.edge:+.1%} | {result.rationale[:100]}...")
         return True
 
     except Exception as e:
         logger.error("paper_execute_error", error=str(e), market=market.get("question", ""))
-        console.log(f"[red]❌ Erreur exécution trade: {e}[/red]")
+        print(f"Erreur exécution trade: {e}")
         return False
