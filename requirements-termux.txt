@@ -1,0 +1,8 @@
+# Dépendances minimales pour Termux Android
+# Usage: pip install -r requirements-termux.txt
+
+requests
+python-dotenv
+structlog
+langgraph
+aiohttp

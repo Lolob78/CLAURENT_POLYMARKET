@@ -1,9 +1,6 @@
 """Client Gamma API pour récupérer les marchés Polymarket."""
 import requests
 from src.config import settings
-from rich.console import Console
-
-console = Console()
 
 
 def get_active_markets(min_volume: int = 50000, limit: int = 100):
@@ -36,8 +33,8 @@ def get_active_markets(min_volume: int = 50000, limit: int = 100):
             except (ValueError, TypeError):
                 continue  # Ignorer les marchés avec données invalides
         
-        console.log(f"[green]✅ {len(filtered)} marchés liquides trouvés[/green]")
+        print(f"✅ {len(filtered)} marchés liquides trouvés")
         return filtered
     except Exception as e:
-        console.log(f"[red]Erreur Gamma API: {e}[/red]")
+        print(f"Erreur Gamma API: {e}")
         return []
