@@ -18,6 +18,9 @@ class Settings:
     default_llm_judge: str = "claude-4-sonnet-2026-04"
     dune_mcp_url: str = "https://mcp.dune.com"
     dune_api_key: str = ""
+    clob_ws_url: str = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+    gamma_api_url: str = "https://gamma-api.polymarket.com"
+    clob_api_url: str = "https://clob.polymarket.com"
 
     def __post_init__(self):
         self.paper_mode = os.getenv("PAPER_MODE", "true").lower() == "true"
@@ -28,5 +31,8 @@ class Settings:
         self.rag_persist_dir = os.getenv("RAG_PERSIST_DIR", self.rag_persist_dir)
         self.dune_mcp_url = os.getenv("DUNE_MCP_URL", self.dune_mcp_url)
         self.dune_api_key = os.getenv("DUNE_API_KEY", self.dune_api_key)
+        self.clob_ws_url = os.getenv("CLOB_WS_URL", self.clob_ws_url)
+        self.gamma_api_url = os.getenv("GAMMA_API_URL", self.gamma_api_url)
+        self.clob_api_url = os.getenv("CLOB_API_URL", self.clob_api_url)
 
 settings = Settings()

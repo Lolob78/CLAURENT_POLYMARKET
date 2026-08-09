@@ -1,24 +1,44 @@
-import aiohttp
+"""
+Client CLOB pour Polymarket (V2 - Août 2026).
+Utilise le PriceManager pour les prix temps réel.
+"""
 
-CLOB_HOST = "https://clob.polymarket.com"
+import aiohttp
+from src.clients.price_manager import price_manager
+from src.utils.logger import get_logger
+
+logger = get_logger("clob_client")
 
 
 async def get_live_price(token_id: str) -> float:
-    """Prix live depuis le CLOB Polymarket (Level 0, pas d'auth).
-    Fallback à 0.5 si le token_id est absent ou l'API indisponible.
+    """
+    Récupère le prix live d'un token_id.
+    Utilise le PriceManager (WebSocket + fallbacks).
     """
     if not token_id:
+        logger.warning("clob_no_token_id")
         return 0.5
+
+    price_data = await price_manager.get_price(token_id)
+    if price_data:
+        return price_data.mid
+    return 0.5  # Fallback par défaut
+
+
+async def get_orderbook(token_id: str) -> dict:
+    """
+    Récupère l'orderbook complet depuis CLOB HTTP.
+    (Utilisé pour estimer le slippage)
+    """
+    if not token_id:
+        return {"bids": [], "asks": []}
+
+    url = f"https://clob.polymarket.com/orderbook/{token_id}"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{CLOB_HOST}/midpoint",
-                params={"token_id": token_id},
-                timeout=aiohttp.ClientTimeout(total=5)
-            ) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    return float(data.get("mid", 0.5))
-    except Exception:
-        pass
-    return 0.5
+                    return await resp.json()
+    except Exception as e:
+        logger.error("orderbook_fetch_error", token_id=token_id, error=str(e))
+    return {"bids": [], "asks": []}

@@ -13,13 +13,15 @@ from src.ingestion.dune_mcp import query_dune_mcp
 from src.execution.paper_executor import paper_execute
 from src.risk.engine import risk
 from src.dashboard.streamlit_app import run_dashboard
+from src.clients.price_manager import price_manager
 
 logger = structlog.get_logger()
+
 
 async def analyze_single_market(market: dict):
     """Analyse un marché avec tout le pipeline async"""
     try:
-        token_id = market.get("clob_token_id") or market.get("token_id")
+        token_id = market.get("clob_token_id") or market.get("clob_token_ids", [None])[0]
         price = await get_live_price(token_id)
         market["price"] = price
 
@@ -50,6 +52,7 @@ async def analyze_single_market(market: dict):
     except Exception as e:
         logger.error("market_analysis_error", market=market.get("question", "unknown"), error=str(e))
 
+
 async def main_24_7_loop():
     """Boucle principale 24/7"""
     logger.info("BOT_STARTED",
@@ -76,24 +79,34 @@ async def main_24_7_loop():
 
         await asyncio.sleep(40)
 
+
 def start_dashboard():
     try:
         run_dashboard()
     except Exception as e:
         logger.error("dashboard_error", error=str(e))
 
-if __name__ == "__main__":
-    dashboard_thread = threading.Thread(target=start_dashboard, daemon=True)
-    dashboard_thread.start()
 
-    print("=" * 60)
-    print("  CLAUAURENT 24/7 PAPER TRADING BOT STARTED")
-    print("  Dashboard: http://localhost:8501")
-    print("=" * 60)
-
+async def main():
+    """Point d'entrée principal avec gestion du PriceManager."""
+    await price_manager.start()
     try:
-        asyncio.run(main_24_7_loop())
+        dashboard_thread = threading.Thread(target=start_dashboard, daemon=True)
+        dashboard_thread.start()
+
+        print("=" * 60)
+        print("  CLAUAURENT 24/7 PAPER TRADING BOT STARTED")
+        print("  Dashboard: http://localhost:8501")
+        print("=" * 60)
+
+        await main_24_7_loop()
     except KeyboardInterrupt:
         logger.info("BOT_STOPPED")
     except Exception as e:
         logger.critical("fatal_error", error=str(e))
+    finally:
+        await price_manager.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
