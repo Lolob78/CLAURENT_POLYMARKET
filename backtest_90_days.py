@@ -19,8 +19,10 @@ from src.ingestion.dune_mcp import query_dune_mcp
 from src.risk.engine import risk
 from src.utils.logger import get_logger
 from src.utils.persistence import persistence
+from src.clients.price_manager import price_manager
 
 logger = get_logger("backtest")
+
 
 async def run_backtest_90_days(num_markets: int = 500):
     """Backtest réaliste sur 90 jours - Paper mode"""
@@ -66,9 +68,8 @@ async def run_backtest_90_days(num_markets: int = 500):
             successful_analyses += 1
 
             if edge >= settings.edge_min:
-                price = market.get("price") or await get_live_price(
-                    market.get("clob_token_id") or market.get("token_id")
-                )
+                token_id = market.get("clob_token_id") or (market.get("clob_token_ids", [None])[0])
+                price = await get_live_price(token_id)
 
                 risk.execute_paper_trade(market, agent_output.side, edge, price)
 
@@ -122,5 +123,15 @@ async def run_backtest_90_days(num_markets: int = 500):
         "max_dd": risk.get_status()["max_dd"]
     }
 
+
+async def main():
+    """Point d'entrée principal avec gestion du PriceManager."""
+    await price_manager.start()
+    try:
+        return await run_backtest_90_days(num_markets=300)
+    finally:
+        await price_manager.stop()
+
+
 if __name__ == "__main__":
-    asyncio.run(run_backtest_90_days(num_markets=300))
+    asyncio.run(main())
