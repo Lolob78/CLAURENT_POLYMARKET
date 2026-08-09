@@ -1,7 +1,10 @@
-"""Backtest 90 jours avec persistence et gestion d'erreurs robuste."""
+"""Backtest 90 jours avec analyse parallèle et gestion d'erreurs robuste.
+Compatibilité : Août 2026 (MarketAnalyzer, WebSocket CLOB)
+"""
 import asyncio
 import csv
 from datetime import datetime
+from typing import List
 
 try:
     import pandas as pd
@@ -11,94 +14,92 @@ except ImportError:
 
 from src.config import settings
 from src.config_validation import validate_config
-from src.clients.gamma import get_active_markets
-from src.clients.clob import get_live_price
-from src.agents.debate_graph import debate_graph
-from src.ingestion.news_scraper import scrape_news_market
-from src.ingestion.dune_mcp import query_dune_mcp
 from src.risk.engine import risk
 from src.utils.logger import get_logger
 from src.utils.persistence import persistence
 from src.clients.price_manager import price_manager
+from src.analyzers.market_analyzer import market_analyzer
 
 logger = get_logger("backtest")
 
 
-async def run_backtest_90_days(num_markets: int = 500):
-    """Backtest réaliste sur 90 jours - Paper mode"""
+async def run_backtest_90_days(num_markets: int = 300):
+    """Backtest réaliste sur 90 jours - Paper mode avec analyse parallèle."""
     risk.__init__(initial_capital=3000.0)
 
-    logger.info("BACKTEST_START",
-                capital_initial=3000,
-                edge_min=settings.edge_min,
-                markets_to_test=num_markets)
+    logger.info(
+        "BACKTEST_START",
+        capital_initial=3000,
+        edge_min=settings.edge_min,
+        markets_to_test=num_markets,
+        max_concurrent=market_analyzer.max_concurrent
+    )
 
     start_time = datetime.utcnow()
-    all_markets = get_active_markets(min_volume=50000, limit=300)
-    test_markets = all_markets[:num_markets]
 
+    # Analyser les marchés en parallèle
+    analyses = await market_analyzer.analyze_markets(limit=num_markets, min_volume=50000)
     total_trades = 0
     capital_start = risk.capital
-    successful_analyses = 0
+    successful_analyses = len([a for a in analyses if a.success])
 
     print("=" * 60)
-    print("  Lancement Backtest 90 jours")
+    print("  Lancement Backtest 90 jours (Parallèle)")
     print("=" * 60)
 
-    for i, market in enumerate(test_markets):
+    for i, analysis in enumerate(analyses):
         try:
-            print(f"[{i+1}/{len(test_markets)}] {market['question'][:70]}...")
-
-            news = await scrape_news_market(market["question"])
-            onchain = await asyncio.to_thread(query_dune_mcp, market.get("condition_id", ""))
-
-            initial_state = {
-                "market": market,
-                "news_context": news,
-                "onchain_context": onchain
-            }
-
-            result = await debate_graph.ainvoke(initial_state)
-
-            if not result or not result.get("result"):
+            if not analysis.success:
+                logger.warning("skipping_failed_analysis", market_id=analysis.market.get("id"), error=analysis.error)
                 continue
 
-            agent_output = result["result"]
-            edge = agent_output.edge
-            successful_analyses += 1
+            if analysis.edge >= settings.edge_min:
+                market = analysis.market
+                risk.execute_paper_trade(
+                    market,
+                    analysis.side,
+                    analysis.edge,
+                    analysis.price
+                )
 
-            if edge >= settings.edge_min:
-                token_id = market.get("clob_token_id") or (market.get("clob_token_ids", [None])[0])
-                price = await get_live_price(token_id)
-
-                risk.execute_paper_trade(market, agent_output.side, edge, price)
-
-                resolution_price = 1.0 if agent_output.prob_true_yes > 0.55 else 0.0
-                risk.close_paper_trade(risk.open_positions[-1], resolution_price)
+                # Résolution simulée (prob_true_yes > 0.55 = YES gagne)
+                resolution_price = 1.0 if getattr(analysis, "prob_true_yes", 0.5) > 0.55 else 0.0
+                if risk.open_positions:
+                    risk.close_paper_trade(risk.open_positions[-1], resolution_price)
 
                 total_trades += 1
-                print(f"  -> TRADE | Edge {edge:+.1%} | {agent_output.side} | {agent_output.rationale[:60]}")
+                print(
+                    f"  [{i+1}/{len(analyses)}] TRADE | "
+                    f"Edge {analysis.edge:+.1%} | {analysis.side} | "
+                    f"Latency: {analysis.latency:.2f}s | "
+                    f"{analysis.rationale[:50]}..."
+                )
 
         except Exception as e:
-            logger.error("backtest_market_error",
-                        market=market.get("question", "unknown")[:50],
-                        error=str(e))
+            logger.error(
+                "backtest_trade_error",
+                market=analysis.market.get("question", "unknown")[:50],
+                error=str(e)
+            )
             continue
 
     duration = (datetime.utcnow() - start_time).total_seconds()
     return_pct = round((risk.capital - capital_start) / capital_start * 100, 2)
 
     print("=" * 60)
-    print("  BACKTEST TERMINE")
+    print("  BACKTEST TERMINÉ")
     print("=" * 60)
 
-    logger.info("BACKTEST_RESULTS",
-                capital_final=round(risk.capital, 2),
-                return_pct=return_pct,
-                total_trades=total_trades,
-                successful_analyses=successful_analyses,
-                max_drawdown=risk.get_status()["max_dd"],
-                duration_seconds=round(duration, 1))
+    logger.info(
+        "BACKTEST_RESULTS",
+        capital_final=round(risk.capital, 2),
+        return_pct=return_pct,
+        total_trades=total_trades,
+        successful_analyses=successful_analyses,
+        max_drawdown=risk.get_status()["max_dd"],
+        duration_seconds=round(duration, 1),
+        avg_latency=sum(a.latency for a in analyses) / len(analyses) if analyses else 0
+    )
 
     # Export CSV
     csv_path = "data/backtest_90j_results.csv"
@@ -112,6 +113,8 @@ async def run_backtest_90_days(num_markets: int = 500):
 
     print(f"Capital final  : ${risk.capital:.2f} ({return_pct:+.2f}%)")
     print(f"Trades         : {total_trades}")
+    print(f"Analyses réussies : {successful_analyses}/{len(analyses)}")
+    print(f"Latence moyenne : {sum(a.latency for a in analyses) / len(analyses):.2f}s" if analyses else "N/A")
     print(f"Max Drawdown   : {risk.get_status()['max_dd']}%")
     print(f"CSV exporté    : {csv_path}")
     print(f"Durée          : {duration/60:.1f} minutes")
@@ -120,17 +123,19 @@ async def run_backtest_90_days(num_markets: int = 500):
         "capital_final": risk.capital,
         "return_pct": return_pct,
         "trades": total_trades,
-        "max_dd": risk.get_status()["max_dd"]
+        "max_dd": risk.get_status()["max_dd"],
+        "avg_latency": sum(a.latency for a in analyses) / len(analyses) if analyses else 0
     }
 
 
 async def main():
-    """Point d'entrée principal avec gestion du PriceManager."""
+    """Point d'entrée principal."""
     await price_manager.start()
     try:
         return await run_backtest_90_days(num_markets=300)
     finally:
         await price_manager.stop()
+        market_analyzer.clear_cache()
 
 
 if __name__ == "__main__":
