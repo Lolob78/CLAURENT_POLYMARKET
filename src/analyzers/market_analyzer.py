@@ -121,7 +121,7 @@ class MarketAnalyzer:
                     "news_context": news,
                     "onchain_context": onchain
                 }
-                result = await self._debate_with_timeout(initial_state, timeout=14.0)
+                result = await self._debate_with_timeout(initial_state, timeout=18.0)
                 if not result or not result.get("result"):
                     return MarketAnalysis(
                         market=market,

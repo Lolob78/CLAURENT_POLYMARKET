@@ -19,7 +19,7 @@ class DebateState(dict):
     result: AgentOutput | None = None
 
 
-async def call_grok_async(prompt: str, retries: int = 2) -> str:
+async def call_grok_async(prompt: str, retries: int = 1) -> str:
     """Appel ASYNC à OpenRouter (priorité) → DeepSeek → Grok (fallbacks), retry exponentiel."""
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
@@ -145,7 +145,7 @@ Retourne UNIQUEMENT un JSON valide, sans texte autour:
 Règle: side=YES si prob_true_yes > prix, side=NO sinon. edge = abs(prob_true_yes - {price:.2f})."""
 
     try:
-        response_text = await asyncio.wait_for(call_grok_async(prompt), timeout=8.0)
+        response_text = await asyncio.wait_for(call_grok_async(prompt), timeout=12.0)
         data = extract_json(response_text)
 
         if data:
