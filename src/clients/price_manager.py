@@ -94,7 +94,7 @@ class PriceManager:
                     self.WS_URL,
                     heartbeat=5.0,  # Ping toutes les 5s
                     autoping=True,  # aiohttp gère les pings automatiquement
-                headers={"User-Agent": "CLAURENT-Polymarket-Bot/1.0"}
+                    headers={"User-Agent": "CLAURENT-Polymarket-Bot/1.0"},
                     timeout=aiohttp.ClientTimeout(total=30.0)
                 ) as ws:
                     self._ws = ws

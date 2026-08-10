@@ -89,6 +89,13 @@ def get_active_markets(min_volume: int = 50000, limit: int = 100) -> List[Dict]:
                 # Pagination par offset : continuer si la page était pleine
                 if len(markets) < min(limit, 100) or len(all_markets) >= limit:
                     break
+                # Page triée par volume décroissant : si rien ne passe le filtre,
+                # les pages suivantes seront encore moins liquides → stop
+                if not filtered:
+                    break
+                # Limite de sécurité côté API (offset max ~2000)
+                if offset >= 2000:
+                    break
                 offset += len(markets)
             else:
                 after_cursor = data.get("next_cursor")
