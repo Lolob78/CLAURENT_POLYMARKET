@@ -107,8 +107,8 @@ class MarketAnalyzer:
                     )
 
                 news, onchain = await asyncio.gather(
-                    self._scrape_news_with_timeout(market["question"], timeout=5.0),
-                    self._query_dune_with_timeout(market.get("condition_id", ""), timeout=5.0),
+                    self._scrape_news_with_timeout(market["question"], timeout=4.0),
+                    self._query_dune_with_timeout(market.get("condition_id", ""), timeout=4.0),
                     return_exceptions=True
                 )
                 if isinstance(news, Exception):
@@ -121,7 +121,7 @@ class MarketAnalyzer:
                     "news_context": news,
                     "onchain_context": onchain
                 }
-                result = await self._debate_with_timeout(initial_state, timeout=10.0)
+                result = await self._debate_with_timeout(initial_state, timeout=14.0)
                 if not result or not result.get("result"):
                     return MarketAnalysis(
                         market=market,

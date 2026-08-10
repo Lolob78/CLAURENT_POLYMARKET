@@ -19,7 +19,7 @@ class DebateState(dict):
     result: AgentOutput | None = None
 
 
-async def call_grok_async(prompt: str, retries: int = 3) -> str:
+async def call_grok_async(prompt: str, retries: int = 2) -> str:
     """Appel ASYNC à OpenRouter (priorité) → DeepSeek → Grok (fallbacks), retry exponentiel."""
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
@@ -75,7 +75,7 @@ async def call_grok_async(prompt: str, retries: int = 3) -> str:
                     url,
                     headers=headers,
                     json=data,
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=20)
                 ) as response:
                     result = await response.json()
                     return extract(result)
@@ -106,7 +106,10 @@ async def analyst_node(state: DebateState):
     """Analyse news/sentiment avec Grok."""
     question = state['market']['question']
     prompt = f"Analyse brièvement le sentiment pour ce marché de prédiction: {question}\nRéponds en 2-3 phrases factuelles."
-    state["news_context"] = await call_grok_async(prompt)
+    try:
+        state["news_context"] = await asyncio.wait_for(call_grok_async(prompt), timeout=6.0)
+    except asyncio.TimeoutError:
+        state["news_context"] = "No news analysis (timeout)"
     return state
 
 
