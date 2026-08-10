@@ -249,14 +249,25 @@ class PriceManager:
         return None
 
     async def _fetch_clob_price(self, token_id: str) -> Optional[float]:
-        """Récupère le prix depuis CLOB HTTP."""
-        url = f"{self.CLOB_API}/midprice/{token_id}"
+        """Récupère le prix depuis CLOB HTTP (endpoint /book, mid calculé)."""
+        url = f"{self.CLOB_API}/book"
+        params = {"token_id": token_id}
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        return float(data.get("mid", 0.5))
+                        # Le mid n'est pas fourni directement : (best_bid + best_ask) / 2
+                        # NB: bids/asks ne sont PAS garantis triés du meilleur au pire → max/min
+                        bids = data.get("bids") or []
+                        asks = data.get("asks") or []
+                        if bids and asks:
+                            best_bid = max(float(b["price"]) for b in bids)
+                            best_ask = min(float(a["price"]) for a in asks)
+                            return (best_bid + best_ask) / 2.0
+                        last = data.get("last_trade_price")
+                        if last is not None:
+                            return float(last)
         except Exception as e:
             logger.error("clob_fetch_error", token_id=token_id, error=str(e))
         return None

@@ -4,6 +4,7 @@ Gère la pagination (limit=100 + cursor) et les métadonnées des marchés.
 """
 
 import requests
+import json
 from typing import List, Dict, Optional
 from src.utils.logger import get_logger
 
@@ -30,11 +31,14 @@ def get_active_markets(min_volume: int = 50000, limit: int = 100) -> List[Dict]:
 
     all_markets = []
     after_cursor = None
+    offset = 0
 
     try:
         while len(all_markets) < limit:
             if after_cursor:
                 params["after_cursor"] = after_cursor
+            elif offset:
+                params["offset"] = offset
 
             resp = requests.get(
                 url,
@@ -45,7 +49,11 @@ def get_active_markets(min_volume: int = 50000, limit: int = 100) -> List[Dict]:
             resp.raise_for_status()
             data = resp.json()
 
-            markets = data.get("markets", [])
+            # L'API /markets retourne une liste directe (pas {markets: [...]})
+            if isinstance(data, list):
+                markets = data
+            else:
+                markets = data.get("markets", [])
             if not markets:
                 break
 
@@ -57,12 +65,19 @@ def get_active_markets(min_volume: int = 50000, limit: int = 100) -> List[Dict]:
                     liquidity = float(m.get("liquidity", 0))
                     if volume >= min_volume and liquidity > 20000:
                         # Extraire les token_ids pour CLOB
-                        m["clob_token_ids"] = (
+                        raw_tokens = (
                             m.get("clobTokenIds") or
                             m.get("tokenIds") or
                             [m.get("conditionId")] or
                             []
                         )
+                        # L'API retourne les tokenIds en JSON string (double-encodé)
+                        if isinstance(raw_tokens, str):
+                            try:
+                                raw_tokens = json.loads(raw_tokens)
+                            except (ValueError, TypeError):
+                                raw_tokens = []
+                        m["clob_token_ids"] = raw_tokens
                         # Prendre le premier token_id par défaut
                         m["clob_token_id"] = m["clob_token_ids"][0] if m["clob_token_ids"] else None
                         filtered.append(m)
@@ -70,10 +85,15 @@ def get_active_markets(min_volume: int = 50000, limit: int = 100) -> List[Dict]:
                     continue
 
             all_markets.extend(filtered)
-            after_cursor = data.get("next_cursor")
-
-            if not after_cursor or len(all_markets) >= limit:
-                break
+            if isinstance(data, list):
+                # Pagination par offset : continuer si la page était pleine
+                if len(markets) < min(limit, 100) or len(all_markets) >= limit:
+                    break
+                offset += len(markets)
+            else:
+                after_cursor = data.get("next_cursor")
+                if not after_cursor or len(all_markets) >= limit:
+                    break
 
         logger.info("gamma_markets_fetched", count=len(all_markets))
         return all_markets[:limit]

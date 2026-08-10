@@ -3,11 +3,14 @@ from langgraph.graph import StateGraph, END
 from src.config import settings
 from src.agents.structured_output import AgentOutput
 from src.ingestion.dune_mcp import query_dune_mcp
+from src.utils.logger import get_logger
 import aiohttp
 import asyncio
 import os
 import json
 import re
+
+logger = get_logger("debate_graph")
 
 class DebateState(dict):
     market: dict
@@ -128,61 +131,6 @@ Règle: side=YES si prob_true_yes > prix, side=NO sinon. edge = abs(prob_true_ye
         state["result"] = AgentOutput(
             prob_true_yes=0.5, confidence=50, edge=0.0,
             rationale=f"Grok error: {str(e)}", side="YES"
-        )
-    return statedef judge_node(state: DebateState):
-    """Jugement final avec Grok — synthèse news + onchain + prix."""
-    price = state['market'].get('price', 0.5)
-    prompt = f"""Tu es un juge rationnel pour les marchés de prédiction.
-
-Marché: {state['market']['question']}
-Prix actuel: {price:.2f} (probabilité implicite du marché)
-Analyse news/sentiment: {state.get('news_context', 'N/A')}
-Contexte onchain: {state.get('onchain_context', 'N/A')}
-
-Calcule ton estimation de la probabilité réelle que l'événement se produise (YES).
-L'edge = abs(ta_probabilité - prix_marché).
-
-Retourne UNIQUEMENT un JSON valide, sans texte autour:
-{{
-  "prob_true_yes": 0.XX,
-  "confidence": XX,
-  "edge": 0.XX,
-  "rationale": "explication courte",
-  "side": "YES"
-}}
-
-Règle: side=YES si prob_true_yes > prix, side=NO sinon. edge = abs(prob_true_yes - {price:.2f})."""
-
-    try:
-        response_text = await asyncio.wait_for(call_grok_async(prompt), timeout=8.0)
-    except asyncio.TimeoutError:
-        logger.warning("grok_timeout", market=state["market"].get("question", "")[:30])
-        state["result"] = AgentOutput(
-            prob_true_yes=0.5, confidence=50, edge=0.0,
-            rationale="Grok API timeout", side="YES"
-        )
-        return state
-    except Exception as e:
-        logger.error("grok_error", error=str(e))
-        state["result"] = AgentOutput(
-            prob_true_yes=0.5, confidence=50, edge=0.0,
-            rationale=f"Grok error: {str(e)}", side="YES"
-        )
-        return state
-    data = extract_json(response_text)
-
-    if data:
-        try:
-            state["result"] = AgentOutput(**data)
-        except Exception:
-            state["result"] = AgentOutput(
-                prob_true_yes=0.5, confidence=50, edge=0.0,
-                rationale=f"Validation error: {data}", side="YES"
-            )
-    else:
-        state["result"] = AgentOutput(
-            prob_true_yes=0.5, confidence=50, edge=0.0,
-            rationale="JSON parse error", side="YES"
         )
     return state
 

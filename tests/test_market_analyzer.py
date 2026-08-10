@@ -55,9 +55,12 @@ async def test_analyze_markets_parallel():
 async def test_cache_works():
     """Test que le cache fonctionne."""
     ma = MarketAnalyzer(max_concurrent=1)
-    with patch.object(ma, '_analyze_single_market', new_callable=AsyncMock) as mock_analyze:
+    # Marché stable simulé (id cohérent entre get_active_markets et le résultat)
+    fake_market = {"id": "123", "question": "Test market", "clob_token_id": "0x123"}
+    with patch("src.analyzers.market_analyzer.get_active_markets", return_value=[fake_market]), \
+         patch.object(ma, '_analyze_single_market', new_callable=AsyncMock) as mock_analyze:
         mock_analyze.return_value = MarketAnalysis(
-            market={"id": "123"}, edge=0.2, side="YES", rationale="Test", price=0.7, success=True, latency=0.5
+            market=fake_market, edge=0.2, side="YES", rationale="Test", price=0.7, success=True, latency=0.5
         )
 
         # Première analyse (pas en cache)

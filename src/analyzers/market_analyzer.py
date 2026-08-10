@@ -68,7 +68,15 @@ class MarketAnalyzer:
             tasks.append(task)
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        return [r for r in results if isinstance(r, MarketAnalysis)]
+        analyses = [r for r in results if isinstance(r, MarketAnalysis)]
+
+        # Remplir le cache au niveau appelant (les résultats mockés/passés sont aussi mis en cache)
+        for analysis in analyses:
+            mid = analysis.market.get("id") or analysis.market.get("conditionId")
+            if mid:
+                self._cache[mid] = (analysis, time.time())
+
+        return analyses
 
     async def _return_cached(self, market_id: str, analysis: MarketAnalysis) -> MarketAnalysis:
         """Retourne une analyse depuis le cache."""
