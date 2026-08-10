@@ -20,32 +20,70 @@ class DebateState(dict):
 
 
 async def call_grok_async(prompt: str, retries: int = 3) -> str:
-    """Appel ASYNC à l'API xAI Grok avec retry exponentiel."""
+    """Appel ASYNC à OpenRouter (priorité) → DeepSeek → Grok (fallbacks), retry exponentiel."""
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     grok_key = os.getenv("GROK_API_KEY")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {grok_key}"
-    }
-    data = {
-        "model": "grok-4-1-fast-non-reasoning",
-        "input": prompt
-    }
+    model = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
+
+    if openrouter_key:
+        # OpenRouter — API compatible OpenAI
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openrouter_key}"
+        }
+        data = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False
+        }
+        extract = lambda result: result["choices"][0]["message"]["content"]
+    elif deepseek_key:
+        # DeepSeek direct — API compatible OpenAI
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {deepseek_key}"
+        }
+        data = {
+            "model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False
+        }
+        extract = lambda result: result["choices"][0]["message"]["content"]
+    elif grok_key:
+        # xAI Grok — fallback
+        url = "https://api.x.ai/v1/responses"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {grok_key}"
+        }
+        data = {
+            "model": "grok-4-1-fast-non-reasoning",
+            "input": prompt
+        }
+        extract = lambda result: result['output'][0]['content'][0]['text']
+    else:
+        print("❌ Aucune clé API LLM trouvée (OPENROUTER_API_KEY, DEEPSEEK_API_KEY ou GROK_API_KEY)")
+        return ""
+
     for attempt in range(retries):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    "https://api.x.ai/v1/responses",
+                    url,
                     headers=headers,
                     json=data,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
                     result = await response.json()
-                    return result['output'][0]['content'][0]['text']
+                    return extract(result)
         except Exception as e:
             if attempt < retries - 1:
                 await asyncio.sleep(2 ** attempt)
             else:
-                print(f"❌ Grok échoué après {retries} tentatives: {e}")
+                print(f"❌ LLM échoué après {retries} tentatives: {e}")
     return ""
 
 
