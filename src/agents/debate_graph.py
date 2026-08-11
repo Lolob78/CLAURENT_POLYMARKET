@@ -4,6 +4,7 @@ from src.config import settings
 from src.agents.structured_output import AgentOutput
 from src.ingestion.dune_mcp import query_dune_mcp
 from src.ingestion.whale_engine import whale_engine
+from src.utils.budget import budget, BudgetExceeded
 from src.utils.logger import get_logger
 import aiohttp
 import asyncio
@@ -21,7 +22,12 @@ class DebateState(dict):
 
 
 async def call_grok_async(prompt: str, retries: int = 1) -> str:
-    """Appel ASYNC à OpenRouter (priorité) → DeepSeek → Grok (fallbacks), retry exponentiel."""
+    """Appel ASYNC à OpenRouter (priorité) → DeepSeek → Grok (fallbacks), retry exponentiel.
+
+    Gère le budget LLM : kill switch avant appel si budget dépassé,
+    comptage du coût réel (tokens `usage`) après chaque réponse.
+    """
+    budget.check()  # kill switch — arrête proprement si budget dépassé
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     grok_key = os.getenv("GROK_API_KEY")
@@ -79,6 +85,9 @@ async def call_grok_async(prompt: str, retries: int = 1) -> str:
                     timeout=aiohttp.ClientTimeout(total=20)
                 ) as response:
                     result = await response.json()
+                    if isinstance(result, dict) and "usage" in result:
+                        budget.record(result["usage"])
+                    budget.check()  # après l'appel aussi (boucle de sécurité)
                     return extract(result)
         except Exception as e:
             if attempt < retries - 1:
@@ -176,6 +185,8 @@ Règle: side=YES si prob_true_yes > prix, side=NO sinon. edge = abs(prob_true_ye
             prob_true_yes=0.5, confidence=50, edge=0.0,
             rationale="LLM API timeout", side="YES"
         )
+    except BudgetExceeded:
+        raise  # propager l'arrêt budget
     except Exception as e:
         logger.error("llm_error", error=str(e))
         state["result"] = AgentOutput(

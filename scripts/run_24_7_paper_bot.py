@@ -16,6 +16,7 @@ from src.dashboard.streamlit_app import run_dashboard
 from src.clients.price_manager import price_manager
 from src.analyzers.market_analyzer import market_analyzer
 from src.execution.paper_executor import paper_execute
+from src.utils.budget import budget, BudgetExceeded
 
 logger = structlog.get_logger()
 
@@ -40,6 +41,8 @@ async def analyze_markets_batch():
 
         return trades_executed
 
+    except BudgetExceeded:
+        raise  # propager l'arrêt budget à la boucle principale
     except Exception as e:
         logger.error("batch_analysis_error", error=str(e))
         return 0
@@ -76,6 +79,13 @@ async def main_24_7_loop():
 
         except KeyboardInterrupt:
             logger.info("BOT_STOPPED_BY_USER")
+            break
+        except BudgetExceeded as e:
+            # Budget LLM épuisé → arrêt propre (pas de relance)
+            logger.critical("BUDGET_EXCEEDED_SHUTDOWN", message=str(e),
+                            status=budget.status())
+            print("\n🚫 BUDGET LLM DÉPASSÉ — arrêt propre du bot.")
+            print(f"   {budget.status()}")
             break
         except Exception as e:
             logger.error("main_loop_error", error=str(e))
