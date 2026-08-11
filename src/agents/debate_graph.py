@@ -3,6 +3,7 @@ from langgraph.graph import StateGraph, END
 from src.config import settings
 from src.agents.structured_output import AgentOutput
 from src.ingestion.dune_mcp import query_dune_mcp
+from src.ingestion.whale_engine import whale_engine
 from src.utils.logger import get_logger
 import aiohttp
 import asyncio
@@ -114,8 +115,16 @@ async def analyst_node(state: DebateState):
 
 
 async def onchain_node(state: DebateState):
-    """Contexte onchain via Dune MCP."""
+    """Contexte onchain : whale/smart-money en priorité, fallback Dune MCP."""
     condition_id = state['market'].get('condition_id', '')
+    if condition_id:
+        try:
+            whale_ctx = await whale_engine.get_context(condition_id)
+            if whale_ctx and "No smart-money" not in whale_ctx:
+                state["onchain_context"] = whale_ctx
+                return state
+        except Exception as e:
+            logger.warning("whale_context_error", error=str(e))
     state["onchain_context"] = await asyncio.to_thread(query_dune_mcp, condition_id)
     return state
 

@@ -89,14 +89,63 @@ def price_at_time(trades: List[Dict], outcome: str, t: int) -> Optional[float]:
     return float(best["price"]) if best else None
 
 
-async def analyze_market(market: Dict, price_yes: float, price_no: float, t: int) -> Dict:
+def whale_context(trades: List[Dict], t: int, window_hours: int = 72,
+                  min_usd: float = 2000) -> str:
+    """Reconstitue les mouvements de gros wallets autour du point T.
+
+    Agrège les trades (BUY/SELL) par wallet sur la fenêtre [T-72h, T],
+    pondérés en USD (size × price). Retourne un résumé des plus gros
+    mouvements nets — signal "smart money" que le prix ne montre pas.
+    """
+    window_start = t - window_hours * 3600
+    agg = {}  # wallet -> {buy_usd, sell_usd, buy_yes, sell_yes}
+    for tr in trades:
+        ts = tr.get("timestamp", 0)
+        if not (window_start <= ts <= t):
+            continue
+        size = float(tr.get("size", 0) or 0)
+        price = float(tr.get("price", 0) or 0)
+        usd = size * price
+        side = tr.get("side", "").upper()
+        outcome = tr.get("outcome", "")
+        w = agg.setdefault(tr.get("proxyWallet", "?"), {"buy": 0, "sell": 0, "yes_buy": 0, "no_buy": 0})
+        if side == "BUY":
+            w["buy"] += usd
+            if outcome.lower() == "yes":
+                w["yes_buy"] += usd
+            else:
+                w["no_buy"] += usd
+        else:
+            w["sell"] += usd
+    # Top wallets par activité nette
+    rows = []
+    for w, v in agg.items():
+        net = v["buy"] - v["sell"]
+        if v["buy"] + v["sell"] >= min_usd:
+            rows.append((net, v, w))
+    rows.sort(key=lambda x: -abs(x[0]))
+    if not rows:
+        return "No significant whale activity in window."
+    lines = []
+    for net, v, w in rows[:3]:
+        bias = "YES" if v["yes_buy"] > v["no_buy"] else "NO"
+        direction = "accumulation" if net > 0 else "distribution"
+        lines.append(
+            f"- wallet {w[:8]}…: {direction} net ${abs(net):,.0f} "
+            f"(achats ${v['buy']:,.0f}/ventes ${v['sell']:,.0f}), biais {bias}"
+        )
+    return "\n".join(lines)
+
+
+async def analyze_market(market: Dict, price_yes: float, price_no: float, t: int,
+                         news: str, whale: str) -> Dict:
     """Analyse LLM au moment T — le résultat n'est PAS exposé.
 
     Le judge reçoit :
     - le prix RÉEL du token YES au moment T (pas le mid, qui serait 0.5)
     - les news de l'ÉPOQUE via GDELT (fenêtre [T-14j, T]) — pas de look-ahead
+    - le contexte whale (mouvements de gros wallets dans [T-72h, T])
     """
-    news = await fetch_news_at(market["question"], t)
     state = {
         "market": {
             "question": market["question"],
@@ -104,7 +153,7 @@ async def analyze_market(market: Dict, price_yes: float, price_no: float, t: int
             "condition_id": market.get("conditionId", ""),
         },
         "news_context": news,
-        "onchain_context": "No onchain data available (backtest OOS)",
+        "onchain_context": whale,
     }
     try:
         result = await asyncio.wait_for(debate_graph.ainvoke(state), timeout=45.0)
@@ -134,7 +183,8 @@ async def run_oos_backtest(num_markets: int = 100, min_volume: float = 5000):
     logger.info("OOS_START", markets=len(markets), edge_min=settings.edge_min,
                 t_fraction=T_FRACTION)
 
-    # Préparer les données (trades + prix au point T) en parallèle
+    # Phase 1 : préparation séquentielle (trades, prix, news GDELT datées, whale)
+    # GDELT impose 1 req/5s → séquentiel est le plus efficace (pas de contention)
     prepared = []
     for m in markets:
         try:
@@ -150,19 +200,27 @@ async def run_oos_backtest(num_markets: int = 100, min_volume: float = 5000):
             price_yes = price_at_time(trades, "Yes", t)
             price_no = price_at_time(trades, "No", t)
             if price_yes is None or price_no is None:
+                logger.warning("price_missing", market_id=cond[:12],
+                               yes=price_yes, no=price_no)
                 continue
+            news = await fetch_news_at(m["question"], t, window_days=7)
+            whale = whale_context(trades, t)
             prepared.append({"market": m, "cond": cond, "t": t,
-                             "price_yes": price_yes, "price_no": price_no})
+                             "price_yes": price_yes, "price_no": price_no,
+                             "news": news, "whale": whale})
+            logger.info("oos_prepared", done=len(prepared), market_id=cond[:12],
+                        whale=whale[:40])
         except Exception as e:
             logger.error("prepare_error", error=str(e))
     logger.info("OOS_PREPARED", markets_with_data=len(prepared))
 
-    # Analyses LLM en parallèle (5 concurrents — évite la contention OpenRouter)
+    # Phase 2 : analyses LLM en parallèle (5 concurrents — évite la contention OpenRouter)
     sem = asyncio.Semaphore(5)
 
     async def bounded_analyze(p):
         async with sem:
-            return await analyze_market(p["market"], p["price_yes"], p["price_no"], p["t"])
+            return await analyze_market(p["market"], p["price_yes"], p["price_no"],
+                                        p["t"], p["news"], p["whale"])
 
     analyses = await asyncio.gather(*(bounded_analyze(p) for p in prepared))
 
@@ -173,8 +231,10 @@ async def run_oos_backtest(num_markets: int = 100, min_volume: float = 5000):
             if not analysis["success"]:
                 continue
             entry_price = p["price_yes"] if analysis["side"] == "YES" else p["price_no"]
-            # Garde-fou : ignorer les prix extrêmes (slippage réel impossible)
-            if entry_price < 0.05 or entry_price > 0.95:
+            # Garde-fou : ignorer uniquement les prix à 0.00/1.00 exacts (aucun
+            # trade possible). Les prix <0.05 ou >0.95 sont des trades légitimes :
+            # acheter NO à 0.04 avec edge 0.84 = risque 2$ pour gagner 48$.
+            if entry_price <= 0.005 or entry_price >= 0.995:
                 continue
             if analysis["edge"] >= settings.edge_min and risk.can_trade(analysis["edge"]):
                 risk.execute_paper_trade(
