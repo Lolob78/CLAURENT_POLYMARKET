@@ -231,12 +231,7 @@ async def run_oos_backtest(num_markets: int = 100, min_volume: float = 5000):
             if not analysis["success"]:
                 continue
             entry_price = p["price_yes"] if analysis["side"] == "YES" else p["price_no"]
-            # Garde-fou : ignorer uniquement les prix à 0.00/1.00 exacts (aucun
-            # trade possible). Les prix <0.05 ou >0.95 sont des trades légitimes :
-            # acheter NO à 0.04 avec edge 0.84 = risque 2$ pour gagner 48$.
-            if entry_price <= 0.005 or entry_price >= 0.995:
-                continue
-            if analysis["edge"] >= settings.edge_min and risk.can_trade(analysis["edge"]):
+            if analysis["edge"] >= settings.edge_min and risk.can_trade(analysis["edge"], entry_price, analysis["side"]):
                 risk.execute_paper_trade(
                     {"condition_id": p["cond"], "question": p["market"]["question"]},
                     analysis["side"], analysis["edge"], entry_price

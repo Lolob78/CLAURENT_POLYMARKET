@@ -8,9 +8,28 @@ class RiskEngine:
         self.open_positions = []
         self.trades = []
 
-    def can_trade(self, edge: float) -> bool:
+    def can_trade(self, edge: float, price: float | None = None, side: str | None = None) -> bool:
+        """Vérifie si un trade est autorisé.
+
+        Garde-fous :
+        1. edge >= edge_min
+        2. prix d'entrée dans [min_entry_price, max_entry_price] (filtre strict)
+           → exclut les paris quasi-certains (0.0015) où le LLM a 99% de
+           chances d'avoir tort contre le marché
+        3. ratio gain potentiel / risque >= min_reward_ratio
+           → on achète le token à `price`, il vaut 1$ si gagné :
+             gain = (1 - price), risque = price → ratio = (1-price)/price
+        4. max positions ouvertes
+        5. max drawdown
+        """
         if edge < settings.edge_min:
             return False
+        if price is not None:
+            if not (settings.min_entry_price <= price <= settings.max_entry_price):
+                return False
+            ratio = (1.0 - price) / price
+            if ratio < settings.min_reward_ratio:
+                return False
         if len(self.open_positions) >= settings.max_open_positions:
             return False
         current_dd = (self.equity_curve[-1] - max(self.equity_curve)) / max(self.equity_curve) if self.equity_curve else 0

@@ -18,7 +18,16 @@ async def paper_execute(market: dict, result):
         return False
 
     try:
-        price = await get_live_price(market.get("clob_token_id") or market.get("token_id"))
+        # Prix réel : celui de l'analyse (price_manager WebSocket) en priorité
+        price = getattr(result, "price", None)
+        if price is None or price <= 0 or price >= 1:
+            price = await get_live_price(market.get("clob_token_id") or market.get("token_id"))
+        # Garde-fous : filtre prix strict + ratio récompense/risque
+        if not risk.can_trade(result.edge, price, result.side):
+            logger.info("paper_execute_risk_filter",
+                        edge=result.edge, price=price, side=result.side,
+                        market=market.get("question", "")[:60])
+            return False
         risk.execute_paper_trade(market, result.side, result.edge, price)
 
         logger.info(
