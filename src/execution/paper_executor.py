@@ -2,6 +2,7 @@
 from src.risk.engine import risk
 from src.config import settings
 from src.clients.clob import get_live_price
+from src.clients.price_manager import price_manager
 from src.utils.logger import get_logger
 
 logger = get_logger("paper_executor")
@@ -18,17 +19,30 @@ async def paper_execute(market: dict, result):
         return False
 
     try:
-        # Prix réel : celui de l'analyse (price_manager WebSocket) en priorité
-        price = getattr(result, "price", None)
+        # Token du côté acheté : clob_token_ids = [YES, NO]
+        token_ids = market.get("clob_token_ids") or market.get("clobTokenIds") or []
+        buy_token = token_ids[0] if result.side == "YES" and token_ids else \
+                    (token_ids[1] if result.side == "NO" and len(token_ids) > 1 else None)
+        # Prix réel du côté acheté via price_manager
+        price = None
+        if buy_token:
+            pd = await price_manager.get_price(buy_token)
+            if pd:
+                price = pd.mid
         if price is None or price <= 0 or price >= 1:
-            price = await get_live_price(market.get("clob_token_id") or market.get("token_id"))
+            price = getattr(result, "price", None)
+        if price is None or price <= 0 or price >= 1:
+            price = await get_live_price(buy_token)
         # Garde-fous : filtre prix strict + ratio récompense/risque
         if not risk.can_trade(result.edge, price, result.side):
             logger.info("paper_execute_risk_filter",
                         edge=result.edge, price=price, side=result.side,
                         market=market.get("question", "")[:60])
             return False
-        risk.execute_paper_trade(market, result.side, result.edge, price)
+        # Stocker le token du côté acheté pour le suivi de sortie
+        if not risk.execute_paper_trade(market, result.side, result.edge, price):
+            logger.info("paper_execute_duplicate", market=market.get("question", "")[:60])
+            return False
 
         logger.info(
             "paper_trade_opened",
