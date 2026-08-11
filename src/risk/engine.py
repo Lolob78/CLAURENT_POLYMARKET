@@ -1,5 +1,8 @@
 from src.config import settings
+from src.utils.logger import get_logger
 from datetime import datetime
+
+logger = get_logger("risk_engine")
 
 class RiskEngine:
     def __init__(self, initial_capital: float = 3000.0):
@@ -11,8 +14,12 @@ class RiskEngine:
         self.take_profit = settings.take_profit      # gain % pour clôturer
         self.stop_loss = settings.stop_loss          # perte % pour clôturer
         self.max_hold_minutes = settings.max_hold_minutes
+        self.cooldown_minutes = settings.cooldown_minutes  # interdiction de ré-ouvrir un marché après clôture
+        # {market_id: timestamp fin de cooldown}
+        self._cooldowns: dict = {}
 
-    def can_trade(self, edge: float, price: float | None = None, side: str | None = None) -> bool:
+    def can_trade(self, edge: float, price: float | None = None, side: str | None = None,
+                  market_id: str | None = None) -> bool:
         """Vérifie si un trade est autorisé.
 
         Garde-fous :
@@ -25,8 +32,11 @@ class RiskEngine:
              gain = (1 - price), risque = price → ratio = (1-price)/price
         4. max positions ouvertes
         5. max drawdown
+        6. cooldown : marché non ré-ouvert après une clôture récente
         """
         if edge < settings.edge_min:
+            return False
+        if market_id and self.in_cooldown(market_id):
             return False
         if price is not None:
             if not (settings.min_entry_price <= price <= settings.max_entry_price):
@@ -77,10 +87,31 @@ class RiskEngine:
         self.equity_curve.append(self.capital)
         if position in self.open_positions:
             self.open_positions.remove(position)
+        # Cooldown anti-ré-ouverture (sauf si résolution réelle gagnante : pas de ré-ouv)
+        if position.get("close_reason") in ("stop_loss", "timeout"):
+            self.start_cooldown(position.get("market_id", ""), reason=position["close_reason"])
         self.trades.append({"time": datetime.utcnow().isoformat(), "action": "close",
                             "pnl": round(pnl, 2), "reason": position.get("close_reason", "resolve"),
                             "exit_price": round(exit_price, 4)})
         return pnl
+
+    def in_cooldown(self, market_id: str) -> bool:
+        """True si le marché est encore en cooldown (ré-ouverture interdite)."""
+        end = self._cooldowns.get(market_id)
+        if end is None:
+            return False
+        if datetime.utcnow().timestamp() > end:
+            self._cooldowns.pop(market_id, None)  # cooldown expiré → nettoyage
+            return False
+        return True
+
+    def start_cooldown(self, market_id: str, reason: str = "close") -> None:
+        """Met un marché en cooldown après clôture (empêche la boucle de ré-ouverture)."""
+        if not market_id:
+            return
+        self._cooldowns[market_id] = datetime.utcnow().timestamp() + self.cooldown_minutes * 60
+        logger.info("market_cooldown_started", market_id=market_id,
+                    minutes=self.cooldown_minutes, reason=reason)
 
     def manage_positions(self, current_prices: dict) -> list:
         """Évalue les positions ouvertes et retourne celles à clôturer.

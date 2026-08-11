@@ -33,8 +33,9 @@ async def paper_execute(market: dict, result):
             price = getattr(result, "price", None)
         if price is None or price <= 0 or price >= 1:
             price = await get_live_price(buy_token)
-        # Garde-fous : filtre prix strict + ratio récompense/risque
-        if not risk.can_trade(result.edge, price, result.side):
+        # Garde-fous : filtre prix strict + ratio récompense/risque + cooldown
+        market_id = market.get("condition_id") or market.get("id")
+        if not risk.can_trade(result.edge, price, result.side, market_id=market_id):
             logger.info("paper_execute_risk_filter",
                         edge=result.edge, price=price, side=result.side,
                         market=market.get("question", "")[:60])

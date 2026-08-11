@@ -17,6 +17,7 @@ class Settings:
     take_profit: float = 0.30       # +30% → clôturer (gain sur le token)
     stop_loss: float = 0.30         # -30% → clôturer (perte sur le token)
     max_hold_minutes: int = 720     # 12h max de détention → clôturer
+    cooldown_minutes: int = 360     # 6h de cooldown après clôture d'un marché
     rag_persist_dir: str = "./data/rag_db"
     default_llm_analyst: str = "claude-4-sonnet-2026-04"
     default_llm_onchain: str = "CLAU-4"
@@ -40,6 +41,7 @@ class Settings:
         self.take_profit = float(os.getenv("TAKE_PROFIT", str(self.take_profit)))
         self.stop_loss = float(os.getenv("STOP_LOSS", str(self.stop_loss)))
         self.max_hold_minutes = int(os.getenv("MAX_HOLD_MINUTES", str(self.max_hold_minutes)))
+        self.cooldown_minutes = int(os.getenv("COOLDOWN_MINUTES", str(self.cooldown_minutes)))
         self.rag_persist_dir = os.getenv("RAG_PERSIST_DIR", self.rag_persist_dir)
         self.dune_mcp_url = os.getenv("DUNE_MCP_URL", self.dune_mcp_url)
         self.dune_api_key = os.getenv("DUNE_API_KEY", self.dune_api_key)
