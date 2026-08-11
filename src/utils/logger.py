@@ -6,7 +6,7 @@ from pathlib import Path
 Path("./data").mkdir(exist_ok=True)
 
 
-def setup_logging(log_file: str = "./data/grokaurent.log"):
+def setup_logging(log_file: str = "./data/claurent.log"):
     """Configure structlog."""
     structlog.configure(
         processors=[
@@ -29,4 +29,4 @@ def get_logger(name: str = __name__):
 
 # Configuration par défaut
 setup_logging()
-logger = get_logger("grokaurent")
+logger = get_logger("claurent")

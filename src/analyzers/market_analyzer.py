@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from src.clients.price_manager import price_manager
 from src.clients.gamma import get_active_markets
-from src.ingestion.news_scraper import scrape_news_market
+from src.ingestion.news_engine import fetch_news_now
 from src.ingestion.dune_mcp import query_dune_mcp
 from src.agents.debate_graph import debate_graph
 from src.config import settings
@@ -121,7 +121,7 @@ class MarketAnalyzer:
                     "news_context": news,
                     "onchain_context": onchain
                 }
-                result = await self._debate_with_timeout(initial_state, timeout=18.0)
+                result = await self._debate_with_timeout(initial_state, timeout=30.0)
                 if not result or not result.get("result"):
                     return MarketAnalysis(
                         market=market,
@@ -183,9 +183,9 @@ class MarketAnalyzer:
             return None
 
     async def _scrape_news_with_timeout(self, question: str, timeout: float) -> str:
-        """Scrape les news avec timeout."""
+        """Récupère les news factuelles avec timeout (Google News RSS, sans clé)."""
         try:
-            return await asyncio.wait_for(scrape_news_market(question), timeout=timeout)
+            return await asyncio.wait_for(fetch_news_now(question), timeout=timeout)
         except asyncio.TimeoutError:
             logger.warning("news_scrape_timeout", question=question[:30])
             return "No news available (timeout)"

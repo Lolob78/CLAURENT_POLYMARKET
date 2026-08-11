@@ -107,7 +107,7 @@ async def analyst_node(state: DebateState):
     question = state['market']['question']
     prompt = f"Analyse brièvement le sentiment pour ce marché de prédiction: {question}\nRéponds en 2-3 phrases factuelles."
     try:
-        state["news_context"] = await asyncio.wait_for(call_grok_async(prompt), timeout=6.0)
+        state["news_context"] = await asyncio.wait_for(call_grok_async(prompt), timeout=8.0)
     except asyncio.TimeoutError:
         state["news_context"] = "No news analysis (timeout)"
     return state
@@ -145,7 +145,7 @@ Retourne UNIQUEMENT un JSON valide, sans texte autour:
 Règle: side=YES si prob_true_yes > prix, side=NO sinon. edge = abs(prob_true_yes - {price:.2f})."""
 
     try:
-        response_text = await asyncio.wait_for(call_grok_async(prompt), timeout=12.0)
+        response_text = await asyncio.wait_for(call_grok_async(prompt), timeout=20.0)
         data = extract_json(response_text)
 
         if data:
@@ -162,16 +162,16 @@ Règle: side=YES si prob_true_yes > prix, side=NO sinon. edge = abs(prob_true_ye
                 rationale="JSON parse error", side="YES"
             )
     except asyncio.TimeoutError:
-        logger.warning("grok_timeout", market=state['market'].get('question', '')[:30])
+        logger.warning("llm_timeout", market=state['market'].get('question', '')[:30])
         state["result"] = AgentOutput(
             prob_true_yes=0.5, confidence=50, edge=0.0,
-            rationale="Grok API timeout", side="YES"
+            rationale="LLM API timeout", side="YES"
         )
     except Exception as e:
-        logger.error("grok_error", error=str(e))
+        logger.error("llm_error", error=str(e))
         state["result"] = AgentOutput(
             prob_true_yes=0.5, confidence=50, edge=0.0,
-            rationale=f"Grok error: {str(e)}", side="YES"
+            rationale=f"LLM error: {str(e)}", side="YES"
         )
     return state
 

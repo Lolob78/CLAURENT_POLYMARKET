@@ -33,7 +33,9 @@ class RiskEngine:
         self.trades.append({"time": entry["entry_time"], "action": "open", "pnl": 0})
 
     def close_paper_trade(self, position: dict, exit_price: float):
-        pnl = position["size"] * (exit_price - position["entry_price"]) if position["side"] == "YES" else position["size"] * (position["entry_price"] - exit_price)
+        # On ACHÈTE le token (YES ou NO) à entry_price, il vaut exit_price à la résolution.
+        # PnL identique pour les deux côtés : size × (exit - entry)
+        pnl = position["size"] * (exit_price - position["entry_price"])
         self.capital += pnl
         self.equity_curve.append(self.capital)
         if position in self.open_positions:
