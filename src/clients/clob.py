@@ -10,19 +10,21 @@ from src.utils.logger import get_logger
 logger = get_logger("clob_client")
 
 
-async def get_live_price(token_id: str) -> float:
+async def get_live_price(token_id: str) -> float | None:
     """
     Récupère le prix live d'un token_id.
     Utilise le PriceManager (WebSocket + fallbacks).
+    Retourne None si le prix réel n'est pas trouvé — JAMAIS de prix fictif.
     """
     if not token_id:
         logger.warning("clob_no_token_id")
-        return 0.5
-
+        return None
     price_data = await price_manager.get_price(token_id)
     if price_data:
         return price_data.mid
-    return 0.5  # Fallback par défaut
+    # Pas de prix réel disponible → None (le trade sera rejeté)
+    logger.warning("clob_no_live_price", token_id=token_id)
+    return None
 
 
 async def get_orderbook(token_id: str) -> dict:

@@ -9,7 +9,7 @@ class TestRiskEngine:
 
     def setup_method(self):
         """Reset avant chaque test."""
-        self.engine = RiskEngine(initial_capital=1000.0)
+        self.engine = RiskEngine(initial_capital=1000.0, restore_state=False)
 
     def test_initial_capital(self):
         """Le capital initial est correct."""

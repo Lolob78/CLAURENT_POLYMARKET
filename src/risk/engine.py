@@ -1,11 +1,13 @@
 from src.config import settings
 from src.utils.logger import get_logger
 from datetime import datetime
+import json
+from pathlib import Path
 
 logger = get_logger("risk_engine")
 
 class RiskEngine:
-    def __init__(self, initial_capital: float = 3000.0):
+    def __init__(self, initial_capital: float = 3000.0, restore_state: bool = True):
         self.capital = initial_capital
         self.equity_curve = [initial_capital]
         self.open_positions = []
@@ -17,6 +19,46 @@ class RiskEngine:
         self.cooldown_minutes = settings.cooldown_minutes  # interdiction de ré-ouvrir un marché après clôture
         # {market_id: timestamp fin de cooldown}
         self._cooldowns: dict = {}
+        self._state_file = Path("./data/risk_state.json")
+        if restore_state:
+            self._load_state()
+
+    def _load_state(self):
+        """Recharge le state (capital, positions, cooldowns) après un crash/redémarrage."""
+        try:
+            if self._state_file.exists():
+                with open(self._state_file, 'r') as f:
+                    state = json.load(f)
+                self.capital = float(state.get("capital", self.capital))
+                self.open_positions = state.get("open_positions", [])
+                # Restaurer equity_curve (au minimum le capital courant)
+                self.equity_curve = state.get("equity_curve") or [self.capital]
+                self._cooldowns = {k: float(v) for k, v in state.get("cooldowns", {}).items()}
+                self.trades = state.get("trades", [])
+                if self.open_positions:
+                    logger.info("risk_state_restored", capital=self.capital,
+                                positions=len(self.open_positions),
+                                cooldowns=len(self._cooldowns))
+        except Exception as e:
+            logger.error("risk_state_load_error", error=str(e))
+
+    def _save_state(self):
+        """Persiste le state à chaque changement (résilience anti-crash)."""
+        try:
+            self._state_file.parent.mkdir(exist_ok=True)
+            state = {
+                "capital": self.capital,
+                "open_positions": self.open_positions,
+                "equity_curve": self.equity_curve[-100:],
+                "cooldowns": {k: v for k, v in self._cooldowns.items()
+                              if v > datetime.utcnow().timestamp()},
+                "trades": self.trades[-200:],
+                "saved_at": datetime.utcnow().isoformat(),
+            }
+            with open(self._state_file, 'w') as f:
+                json.dump(state, f, indent=2, default=str)
+        except Exception as e:
+            logger.error("risk_state_save_error", error=str(e))
 
     def can_trade(self, edge: float, price: float | None = None, side: str | None = None,
                   market_id: str | None = None) -> bool:
@@ -78,6 +120,8 @@ class RiskEngine:
         }
         self.open_positions.append(entry)
         self.trades.append({"time": entry["entry_time"], "action": "open", "pnl": 0})
+        self._save_state()
+        return True
 
     def close_paper_trade(self, position: dict, exit_price: float):
         # On ACHÈTE le token (YES ou NO) à entry_price, il vaut exit_price à la résolution.
@@ -93,6 +137,7 @@ class RiskEngine:
         self.trades.append({"time": datetime.utcnow().isoformat(), "action": "close",
                             "pnl": round(pnl, 2), "reason": position.get("close_reason", "resolve"),
                             "exit_price": round(exit_price, 4)})
+        self._save_state()
         return pnl
 
     def in_cooldown(self, market_id: str) -> bool:
@@ -112,6 +157,7 @@ class RiskEngine:
         self._cooldowns[market_id] = datetime.utcnow().timestamp() + self.cooldown_minutes * 60
         logger.info("market_cooldown_started", market_id=market_id,
                     minutes=self.cooldown_minutes, reason=reason)
+        self._save_state()
 
     def manage_positions(self, current_prices: dict) -> list:
         """Évalue les positions ouvertes et retourne celles à clôturer.

@@ -116,8 +116,12 @@ class MarketAnalyzer:
                 if isinstance(onchain, Exception):
                     onchain = "No onchain data available"
 
+                # Injecter le prix RÉEL (token YES) dans le market dict pour le judge.
+                # Sans ça, le judge lit market.get('price', 0.5) → juge sur un prix fictif.
+                m_with_price = dict(market)
+                m_with_price["price"] = price
                 initial_state = {
-                    "market": market,
+                    "market": m_with_price,
                     "news_context": news,
                     "onchain_context": onchain
                 }

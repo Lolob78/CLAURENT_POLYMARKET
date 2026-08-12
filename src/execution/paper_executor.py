@@ -23,16 +23,21 @@ async def paper_execute(market: dict, result):
         token_ids = market.get("clob_token_ids") or market.get("clobTokenIds") or []
         buy_token = token_ids[0] if result.side == "YES" and token_ids else \
                     (token_ids[1] if result.side == "NO" and len(token_ids) > 1 else None)
-        # Prix réel du côté acheté via price_manager
+        # Prix RÉEL du côté acheté uniquement. Rejeter si aucun prix réel :
+        # JAMAIS utiliser le prix du token YES pour un trade NO (incohérent),
+        # JAMAIS trader à un prix fictif.
         price = None
         if buy_token:
             pd = await price_manager.get_price(buy_token)
-            if pd:
+            if pd and 0 < pd.mid < 1:
                 price = pd.mid
-        if price is None or price <= 0 or price >= 1:
-            price = getattr(result, "price", None)
-        if price is None or price <= 0 or price >= 1:
+        if price is None:
+            # Dernier recours : prix réel direct via CLOB (pas de fallback fictif)
             price = await get_live_price(buy_token)
+        if price is None or not (0 < price < 1):
+            logger.info("paper_execute_no_price",
+                        side=result.side, market=market.get("question", "")[:60])
+            return False
         # Garde-fous : filtre prix strict + ratio récompense/risque + cooldown
         market_id = market.get("condition_id") or market.get("id")
         if not risk.can_trade(result.edge, price, result.side, market_id=market_id):
